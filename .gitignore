@@ -1,0 +1,62 @@
+# Virtual environment
+venv_ffmpeg/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+env/
+venv/
+venv_cine/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+.env.local
+.env.dev
+
+.vscode/
+
+# Logs
+logs/*
+*.log
+
+# Video processing folders
+uploads/*
+temp/*
+outputs/*
+
+# State files
+state.json
+state_base.json
+
+# Thumbnails (generated dynamically)
+thumbnails/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PocketBase
+pb_data/
+
+# K3s
+k3s/cine-secret.yaml
+
+.coverage
+.coveragerc
+htmlcov/
+
+*.txt
+.movie_index_cache.json

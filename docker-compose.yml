@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  ffmpeg-api:
+    build: .
+    container_name: ffmpeg-api
+    restart: unless-stopped
+    runtime: nvidia
+    entrypoint: []
+    command: ["python3", "/app/app.py"]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+    ports:
+      - "8082:8080"  # Diferente puerto para no conflictos
+    volumes:
+      - /mnt/DATA_2TB/administracion-peliculas/ffmpeg/temp:/shared/temp
+      - /mnt/DATA_2TB/administracion-peliculas/ffmpeg/uploads:/shared/uploads
+      - /mnt/DATA_2TB/administracion-peliculas/ffmpeg/outputs:/shared/outputs
+    networks:
+      - cine-network
+
+networks:
+  cine-network:
+    external: true
