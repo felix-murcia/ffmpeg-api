@@ -1,5 +1,8 @@
 FROM jrottenberg/ffmpeg:6.0-nvidia
 
+# Anular el ENTRYPOINT heredado de la imagen base
+ENTRYPOINT []
+
 # Instalar Python y pip
 RUN apt-get update && apt-get install -y python3 python3-pip && \
     rm -rf /var/lib/apt/lists/*
@@ -15,3 +18,6 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
 EXPOSE 8080
+
+# Ejecutar tu API Flask
+CMD ["python3", "/app/app.py"]
