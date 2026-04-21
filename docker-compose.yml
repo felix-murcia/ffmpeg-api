@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: ffmpeg-api-prod
     restart: unless-stopped
-    runtime: nvidia
+    gpus: all
     entrypoint: []
     command: ["python3", "/app/app.py"]
     env_file:
@@ -22,6 +22,7 @@ services:
       - ${ADM_PATH}/ffmpeg/uploads:/shared/uploads
       - ${ADM_PATH}/ffmpeg/outputs:/shared/outputs
       - ${ADM_PATH}/downloads:/shared/input
+      - /tmp/audios:/shared/audios
     networks:
       - cine-network
     healthcheck:
