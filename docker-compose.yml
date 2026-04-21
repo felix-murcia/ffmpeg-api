@@ -22,7 +22,7 @@ services:
       - ${ADM_PATH}/ffmpeg/uploads:/shared/uploads
       - ${ADM_PATH}/ffmpeg/outputs:/shared/outputs
       - ${ADM_PATH}/downloads:/shared/input
-      - /tmp/audios:/shared/audios
+      - /tmp/audios:/tmp/audios
     networks:
       - cine-network
     healthcheck:
