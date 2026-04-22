@@ -24,12 +24,13 @@ services:
     ports:
       - "8082:8080"
     volumes:
-      - ${ADM_PATH}/ffmpeg/temp:/shared/temp
-      - ${ADM_PATH}/ffmpeg/uploads:/shared/uploads
-      - ${ADM_PATH}/ffmpeg/outputs:/shared/outputs
-      - ${ADM_PATH}/downloads:/shared/input
+      - /mnt/DATA_2TB/administracion-peliculas/ffmpeg/temp:/shared/temp
+      - /mnt/DATA_2TB/administracion-peliculas/ffmpeg/uploads:/shared/uploads
+      - /mnt/DATA_2TB/administracion-peliculas/ffmpeg/outputs:/shared/outputs
+      - /mnt/DATA_2TB/administracion-peliculas/downloads:/shared/input
       - /tmp/audios:/tmp/audios
       - /tmp/videos:/tmp/videos
+      - /tmp/images:/tmp/images
       - /tmp/data:/app/data
       - /tmp/data/cache:/app/data/cache
     networks:

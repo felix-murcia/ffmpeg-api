@@ -20,8 +20,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 
 EXPOSE 8080
 
-RUN mkdir -p /shared/uploads /shared/outputs /shared/input /tmp/audios /tmp/videos /tmp/data /tmp/data/cache && \
-    chmod -R 777 /shared/uploads /shared/outputs /shared/input /tmp/audios /tmp/videos /tmp/data /tmp/data/cache
+RUN mkdir -p /shared/uploads /shared/outputs /shared/input /tmp/audios /tmp/videos /tmp/images /tmp/data /tmp/data/cache  && \
+    chmod -R 777 /shared/uploads /shared/outputs /shared/input /tmp/audios /tmp/videos /tmp/images /tmp/data /tmp/data/cache
 
 # Ejecutar tu API Flask
 CMD ["python3", "/app/app.py"]
