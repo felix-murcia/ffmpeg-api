@@ -225,6 +225,8 @@ class AudioValidator(AudioService):
         """Analyze audio quality with ffmpeg filters."""
         cmd = [
             "ffmpeg",
+            "-threads",
+            "0",
             "-i",
             file_path,
             "-af",

@@ -360,13 +360,15 @@ def register_audio_routes(app):
 
         cmd = [
             "ffmpeg",
+            "-threads",
+            "0",
             "-i",
             input_path,
             "-vn",
             "-acodec",
             "libmp3lame",
-            "-b:a",
-            "32k",
+            "-q:a",
+            "9",  # VBR mínimo, tamaño reducido
             "-y",
             output_path,
         ]

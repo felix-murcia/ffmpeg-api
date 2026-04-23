@@ -1,20 +1,38 @@
 """
-Módulo de rutas de video
+Módulo de rutas de video - Refactorizado con principios SOLID.
+Mantiene compatibilidad total con la API existente.
 """
 
-import json
 import logging
+import time
 import os
 import subprocess
-import time
-import uuid
 from flask import jsonify, request
 
 logger = logging.getLogger("ffmpeg-api")
 
 from .gpu import get_gpu_preset_and_level
 from .process_manager import get_process_manager
-from .ffmpeg_runner import run_ffmpeg
+from .video_helper import (
+    FileHandler,
+    FFmpegExecutor,
+    VideoOptimizer,
+    VideoCreator,
+    VideoOptimizationError,
+    VideoCreationError,
+    FileNotFoundError,
+)
+
+# Initialize shared dependencies
+_file_handler = FileHandler(temp_dir="/tmp")
+_ffmpeg_executor = FFmpegExecutor(logger)
+_process_manager = get_process_manager()
+
+# Initialize video services
+_video_optimizer = VideoOptimizer(
+    _ffmpeg_executor, _file_handler, _process_manager, get_gpu_preset_and_level, logger
+)
+_video_creator = VideoCreator(_ffmpeg_executor, _file_handler, logger)
 
 
 def register_video_routes(app):
@@ -55,189 +73,28 @@ def register_video_routes(app):
         input_path = data.get("input")
         output_path = data.get("output")
 
-        logger.info(
-            f"📥 Recibida petición optimize: input={input_path}, output={output_path}"
-        )
-
         if not input_path or not output_path:
             logger.error("❌  input y output son requeridos")
             return jsonify({"error": "input y output son requeridos"}), 400
 
-        if not os.path.exists(input_path):
-            logger.error(f"❌  Input file not found: {input_path}")
-            return jsonify({"error": f"Input file not found: {input_path}"}), 404
-
-        # Verificar tamaño del archivo
-        file_size = os.path.getsize(input_path) / (1024 * 1024 * 1024)  # GB
-        logger.info(f"📊 Tamaño del archivo: {file_size:.2f} GB")
-
-        process_id = str(uuid.uuid4())
-        logger.info(f"🆔 Nuevo proceso: {process_id}")
-
-        # Determinar si es necesario copiar el archivo (si está en /downloads)
-        # Si el input está en /downloads, copiar a /temp para mejor rendimiento
-        original_input = input_path
-        needs_copy = input_path.startswith("/downloads") or input_path.startswith(
-            "~/downloads"
-        )
-        temp_input = input_path
-
-        if needs_copy:
-            # Crear path temporal en /temp
-            filename = os.path.basename(input_path)
-            temp_dir = "/tmp/ffmpeg_input"
-            os.makedirs(temp_dir, exist_ok=True)
-            temp_input = os.path.join(temp_dir, f"{process_id}_{filename}")
-            logger.info(
-                f"📁 Archivo en /downloads detectado - será copiado a {temp_input}"
-            )
-
-        # Detectar configuración según GPU
-        gpu_config = get_gpu_preset_and_level()
-
-        # Construir comando base con mapping genérico por tipo
-        # Esto maneja automáticamente archivos con múltiples streams de audio
-        cmd = [
-            "ffmpeg",
-            "-hwaccel",
-            "cuda",
-            "-i",
-            temp_input if needs_copy else input_path,
-            "-map",
-            "0:v:0",  # Selecciona el primer stream de video
-            "-map",
-            "0:a:0?",  # Selecciona el primer stream de audio (opcional)
-            "-map",
-            "0:s:0?",  # Selecciona el primer stream de subtítulos (opcional)
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            gpu_config["preset"],
-            "-rc",
-            "vbr",
-            "-tune",
-            "hq",
-        ]
-
-        # Añadir multipass solo si no es "none"
-        if gpu_config["multipass"] != "none":
-            cmd.extend(["-multipass", gpu_config["multipass"]])
-
-        cmd.extend(
-            [
-                "-cq",
-                "28",
-                "-b:v",
-                "1800k",
-                "-maxrate",
-                "2200k",
-                "-bufsize",
-                "4400k",
-                "-rc-lookahead",
-                gpu_config["lookahead"],
-                "-profile:v",
-                "high",
-            ]
-        )
-
-        # Añadir level SOLO si include_level es True
-        if gpu_config.get("include_level", False):
-            cmd.extend(["-level", gpu_config["level"]])
-
-        cmd.extend(
-            [
-                "-pix_fmt",
-                "yuv420p",
-                "-g",
-                "120",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-ac",
-                "2",
-                "-ar",
-                "48000",
-                "-c:s",
-                "copy",
-                "-disposition:a:0",
-                "default",  # Marcar el audio como default
-                "-f",
-                "matroska",
-                "-y",
-                output_path,
-            ]
-        )
-
-        logger.info(f"🎬 Comando: {' '.join(cmd)}")
-
-        # Gestor de procesos
-        process_manager = get_process_manager()
-
-        # Crear entrada en el diccionario compartido
-        process_manager.set(
-            process_id,
-            {
-                "id": process_id,
-                "cmd": " ".join(cmd),
-                "input": original_input,
-                "input_for_ffmpeg": temp_input,
-                "output": output_path,
-                "status": "starting",
-                "progress": 0,
-                "start_time": time.time(),
-                "logs": [],
-                "total_duration": None,
-                "gpu_config": gpu_config,
-                "needs_copy": needs_copy,
-                "copy_progress": 0,
-            },
-        )
-
-        logger.info(f"[{process_id}] ✅  Proceso creado en diccionario compartido")
-
-        # Intentar obtener duración total
         try:
-            duration_cmd = [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                input_path,
-            ]
-            result = subprocess.run(
-                duration_cmd, capture_output=True, text=True, timeout=10
+            process_id = _video_optimizer.launch_optimization(input_path, output_path)
+            return jsonify(
+                {
+                    "success": True,
+                    "process_id": process_id,
+                    "message": "Optimización iniciada",
+                }
             )
-            if result.returncode == 0 and result.stdout.strip():
-                duration = float(result.stdout.strip())
-                process = process_manager.get(process_id)
-                if process:
-                    process["total_duration"] = duration
-                logger.info(f"⏱️ Duración total: {duration:.2f} segundos")
+        except FileNotFoundError as e:
+            logger.error(f"❌ Input file not found: {e}")
+            return jsonify({"error": str(e)}), 404
+        except VideoOptimizationError as e:
+            logger.error(f"❌ Optimization error: {e}")
+            return jsonify({"error": str(e)}), 500
         except Exception as e:
-            logger.warning(f"⚠️ No se pudo obtener duración: {e}")
-
-        # Guardar estado inicial en archivo
-        process_manager.save_to_file(process_id)
-        logger.info(f"[{process_id}] 💾 Estado inicial guardado en archivo")
-
-        # Importar Process aquí para evitar problemas de importación circular
-        from multiprocessing import Process
-
-        p = Process(target=run_ffmpeg, args=(process_id, cmd))
-        p.daemon = True
-        p.start()
-
-        return jsonify(
-            {
-                "success": True,
-                "process_id": process_id,
-                "message": "Optimización iniciada",
-            }
-        )
+            logger.error(f"❌ Unexpected error in optimize: {e}")
+            return jsonify({"error": "Internal server error"}), 500
 
     @app.route("/status/<process_id>", methods=["GET"])
     def get_status(process_id):
@@ -315,83 +172,19 @@ def register_video_routes(app):
         audio_path = data.get("audio_path")
         image_path = data.get("image_path")
 
-        logger.info(
-            f"🎵 Recibida petición create-from-audio: audio_path={audio_path}, image_path={image_path}"
-        )
-
         if not audio_path or not image_path:
             logger.error("❌ audio_path e image_path son requeridos")
             return jsonify({"error": "audio_path e image_path son requeridos"}), 400
 
-        if not os.path.exists(audio_path):
-            logger.error(f"❌ Audio file not found: {audio_path}")
-            return jsonify({"error": f"Audio file not found: {audio_path}"}), 404
-
-        if not os.path.exists(image_path):
-            logger.error(f"❌ Image file not found: {image_path}")
-            return jsonify({"error": f"Image file not found: {image_path}"}), 404
-
-        # Generar nombre de archivo de salida único
-        output_filename = f"video_{uuid.uuid4()}.mp4"
-        output_path = os.path.join("/tmp/videos", output_filename)
-
-        # Asegurar que el directorio de salida existe
-        os.makedirs("/tmp/videos", exist_ok=True)
-
-        # Construir comando ffmpeg
-        # Calidad aceptable: 1080p, bitrate alto, libx264 con preset medium
-        cmd = [
-            "ffmpeg",
-            "-y",  # Sobrescribir si existe
-            "-loop",
-            "1",  # Repetir imagen
-            "-i",
-            image_path,
-            "-i",
-            audio_path,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-tune",
-            "stillimage",
-            "-crf",
-            "23",  # Calidad (18-28, menor es mejor)
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-shortest",  # Terminar cuando el audio termine
-            "-vf",
-            "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",  # Escalar y centrar
-            output_path,
-        ]
-
-        logger.info(f"🎬 Comando: {' '.join(cmd)}")
-
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode == 0:
-                logger.info(f"✅ Video creado exitosamente: {output_path}")
-                return jsonify(
-                    {
-                        "success": True,
-                        "output_path": output_path,
-                        "output_filename": output_filename,
-                        "image_used": os.path.basename(image_path),
-                        "audio_source": os.path.basename(audio_path),
-                    }
-                )
-            else:
-                logger.error(f"❌ Error en ffmpeg: {result.stderr}")
-                return jsonify(
-                    {"error": "Failed to create video", "details": result.stderr}
-                ), 500
-        except subprocess.TimeoutExpired:
-            logger.error("❌ Timeout al crear video")
-            return jsonify({"error": "Timeout while creating video"}), 500
+            result = _video_creator.create(audio_path, image_path)
+            return jsonify(result), 200
+        except FileNotFoundError as e:
+            logger.error(f"❌ File not found: {e}")
+            return jsonify({"error": str(e)}), 404
+        except VideoCreationError as e:
+            logger.error(f"❌ Video creation error: {e}")
+            return jsonify({"error": str(e)}), 500
         except Exception as e:
-            logger.error(f"❌ Error inesperado: {e}")
+            logger.error(f"❌ Unexpected error: {e}")
             return jsonify({"error": str(e)}), 500

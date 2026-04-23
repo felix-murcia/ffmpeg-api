@@ -23,11 +23,30 @@ class AudioConverter(AudioService):
     # FFmpeg configurations per format
     FORMAT_CONFIGS = {
         FORMAT_WAV: {
-            "args": ["-ac", "1", "-ar", "16000", "-f", "wav"],
+            "args": [
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-acodec",
+                "pcm_s16le",
+                "-f",
+                "wav",
+                "-threads",
+                "0",
+            ],
             "mime_type": "audio/wav",
         },
         FORMAT_MP3: {
-            "args": ["-vn", "-acodec", "libmp3lame", "-b:a", "192k"],
+            "args": [
+                "-vn",
+                "-acodec",
+                "libmp3lame",
+                "-q:a",
+                "9",
+                "-threads",
+                "0",
+            ],  # VBR mínimo, tamaño reducido
             "mime_type": "audio/mpeg",
         },
     }
@@ -62,8 +81,12 @@ class AudioConverter(AudioService):
         config = self.FORMAT_CONFIGS[output_format]
         output_path = self.file_handler.generate_temp_path(temp_id, f".{output_format}")
 
-        # Build command
-        cmd = ["ffmpeg", "-i", input_path] + config["args"] + ["-y", output_path]
+        # Build command with threading for speed
+        cmd = (
+            ["ffmpeg", "-threads", "0", "-i", input_path]
+            + config["args"]
+            + ["-y", output_path]
+        )
 
         try:
             self.ffmpeg_executor.run_ffmpeg(cmd)
@@ -147,16 +170,18 @@ class AudioConverter(AudioService):
 
         output_path = os.path.splitext(input_path)[0] + ".mp3"
 
-        # Build command matching legacy client
+        # Build command matching legacy client but optimized for size & speed
         cmd = [
             "ffmpeg",
+            "-threads",
+            "0",
             "-i",
             input_path,
             "-vn",
             "-acodec",
             "libmp3lame",
-            "-b:a",
-            "192k",
+            "-q:a",
+            "9",  # VBR lowest quality for minimal size
             "-y",
             output_path,
         ]

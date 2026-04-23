@@ -20,8 +20,8 @@ class AudioCleaner(AudioService):
     DEFAULT_FILENAME = "cleaned.wav"
     ORIGINAL_FILENAME = "original.wav"
 
-    # FFmpeg parameters for cleaning
-    CLEAN_PARAMS = ["-ac", "1", "-ar", "16000"]
+    # FFmpeg parameters for cleaning (WAV 16kHz mono, max speed)
+    CLEAN_PARAMS = ["-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le"]
 
     def __init__(
         self,
@@ -60,13 +60,9 @@ class AudioCleaner(AudioService):
             f"[CLEAN] Original size: {self.file_handler.get_size(input_path)} bytes"
         )
 
-        # Build command
+        # Build command with threading for speed
         cmd = (
-            [
-                "ffmpeg",
-                "-i",
-                input_path,
-            ]
+            ["ffmpeg", "-threads", "0", "-i", input_path]
             + self.CLEAN_PARAMS
             + ["-y", output_path]
         )
