@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 from .process_manager import get_process_manager
+from .config import TimeoutConfig
 
 logger = logging.getLogger("ffmpeg-api")
 
@@ -157,7 +158,7 @@ def run_ffmpeg(process_id, cmd):
         try:
             duration_cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
                            "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-            result = subprocess.run(duration_cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(duration_cmd, capture_output=True, text=True, timeout=TimeoutConfig.DURATION_PROBE_TIMEOUT)
             if result.returncode == 0 and result.stdout.strip():
                 total_duration = float(result.stdout.strip())
                 process_info["total_duration"] = total_duration
@@ -224,7 +225,7 @@ def run_ffmpeg(process_id, cmd):
             stderr_thread.start()
             
             return_code = proc.wait()
-            stderr_thread.join(timeout=2)
+            stderr_thread.join(timeout=TimeoutConfig.THREAD_JOIN_TIMEOUT)
             
             if return_code == 0:
                 save_status("completed", progress=100)

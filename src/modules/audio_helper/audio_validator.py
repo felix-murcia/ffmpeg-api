@@ -9,6 +9,7 @@ from .base import AudioService
 from .exceptions import AudioValidationError
 from .ffmpeg_executor import FFmpegExecutor
 from .file_handler import FileHandler
+from ..config import TimeoutConfig
 
 
 class AudioValidator(AudioService):
@@ -237,7 +238,7 @@ class AudioValidator(AudioService):
         ]
 
         try:
-            result = self.ffmpeg_executor.run_ffmpeg(cmd, timeout=30)
+            result = self.ffmpeg_executor.run_ffmpeg(cmd, timeout=TimeoutConfig.AUDIO_QUALITY_ANALYSIS_TIMEOUT)
             stderr = result[2]
         except Exception:
             # If quality analysis fails, return None values

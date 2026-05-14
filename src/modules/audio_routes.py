@@ -14,6 +14,7 @@ from werkzeug.datastructures import FileStorage
 logger = logging.getLogger("ffmpeg-api")
 
 from .utils import format_duration
+from .config import TimeoutConfig
 
 # Import services from audio_helper
 from .audio_helper import (
@@ -41,6 +42,7 @@ _ffmpeg_executor = FFmpegExecutor(logger)
 
 def register_audio_routes(app):
     """Registra las rutas de audio en la aplicación"""
+    logger.info("Registrando rutas de audio...")
 
     @app.route("/audio/info", methods=["POST"])
     def audio_info():
@@ -239,7 +241,7 @@ def register_audio_routes(app):
         try:
             input_path = _file_handler.save_upload(file, temp_id)
 
-            service = AudioCleaner(_ffmpeg_executor, _file_handler, logger, timeout=60)
+            service = AudioCleaner(_ffmpeg_executor, _file_handler, logger)
             audio_data, mime_type, filename = service.clean(input_path, temp_id)
 
             return (
@@ -379,4 +381,65 @@ def register_audio_routes(app):
             return jsonify({"output": output_path}), 200
         except Exception as e:
             logger.error(f"Convert by path error: {e}")
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/audio/convert-to-mp3-chunked", methods=["POST"])
+    def convert_to_mp3_chunked():
+        """
+        Convierte audio a MP3 y lo divide en chunks para Groq.
+        Diseñado para audios largos (>2 horas) que exceden el límite de 25MB.
+
+        Input: {"path": "ruta/al/audio.webm"}
+        Output: {
+            "chunks": ["/tmp/chunk1.mp3", "/tmp/chunk2.mp3", ...],
+            "total_chunks": 3,
+            "original_mp3": "/tmp/audio.mp3"  # opcional, para cleanup
+        }
+        """
+
+        data = request.json
+        input_path = data.get("path")
+        max_size_mb = data.get("max_size_mb", 22)  # 22MB para margen de seguridad
+        
+        if not input_path:
+            return jsonify({"error": "Se requiere la ruta del archivo"}), 400
+        
+        if not os.path.exists(input_path):
+            return jsonify({"error": f"Archivo no encontrado: {input_path}"}), 404
+        
+        try:
+            service = AudioConverter(_ffmpeg_executor, _file_handler)
+            
+            # Paso 1: Convertir a MP3 optimizado
+            logger.info(f"Convertiendo a MP3: {input_path}")
+            mp3_path = service.convert_to_mp3_file(input_path, delete_original=False)
+            logger.info(f"MP3 convertido: {mp3_path}")
+            # Paso 2: Verificar tamaño y dividir si es necesario
+            size_mb = service.get_file_size_mb(mp3_path)
+            
+            if size_mb <= max_size_mb:
+                # No necesita división
+                logger.info(f"MP3 pequeño ({size_mb:.1f}MB), no requiere chunking")
+                return jsonify({
+                    "chunks": [mp3_path],
+                    "total_chunks": 1,
+                    "needs_chunking": False
+                }), 200
+            else:
+                # Dividir en chunks
+                logger.info(f"MP3 grande ({size_mb:.1f}MB), dividiendo en chunks")
+                chunks = service.chunk_mp3(mp3_path, max_size_mb)
+                
+                return jsonify({
+                    "chunks": chunks,
+                    "total_chunks": len(chunks),
+                    "original_mp3": mp3_path,
+                    "needs_chunking": True
+                }), 200
+                
+        except AudioConversionError as e:
+            logger.error(f"Error en convert-to-mp3-chunked: {e}")
+            return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            logger.error(f"Error inesperado: {e}")
             return jsonify({"error": str(e)}), 500

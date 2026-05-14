@@ -5,6 +5,7 @@ Audio stream detector - checks if a video/audio file contains an audio stream.
 import os
 from typing import Optional
 from .ffmpeg_executor import FFmpegExecutor
+from ..config import TimeoutConfig
 
 
 class AudioStreamDetector:
@@ -13,7 +14,7 @@ class AudioStreamDetector:
     def __init__(self, ffmpeg_executor: FFmpegExecutor):
         self.ffmpeg_executor = ffmpeg_executor
 
-    def has_audio_stream(self, file_path: str, timeout: int = 10) -> bool:
+    def has_audio_stream(self, file_path: str, timeout: int = TimeoutConfig.AUDIO_STREAM_DETECTION_TIMEOUT) -> bool:
         """
         Check if a video/audio file contains an audio stream.
 

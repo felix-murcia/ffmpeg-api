@@ -11,6 +11,7 @@ from flask import jsonify, request
 
 logger = logging.getLogger("ffmpeg-api")
 
+from .config import TimeoutConfig
 from .gpu import get_gpu_preset_and_level
 from .process_manager import get_process_manager
 from .video_helper import (
@@ -32,7 +33,9 @@ _process_manager = get_process_manager()
 _video_optimizer = VideoOptimizer(
     _ffmpeg_executor, _file_handler, _process_manager, get_gpu_preset_and_level, logger
 )
-_video_creator = VideoCreator(_ffmpeg_executor, _file_handler, logger)
+_video_creator = VideoCreator(
+    _ffmpeg_executor, _file_handler, logger, get_gpu_preset_and_level
+)
 
 
 def register_video_routes(app):
@@ -51,7 +54,7 @@ def register_video_routes(app):
                 ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=TimeoutConfig.GPU_DETECTION_TIMEOUT,
             )
             if result.returncode == 0 and result.stdout.strip():
                 gpu_name = result.stdout.strip().split("\n")[0]

@@ -3,6 +3,7 @@ Módulo de detección de GPU y configuración de presets
 """
 import subprocess
 import logging
+from .config import TimeoutConfig
 
 logger = logging.getLogger("ffmpeg-api")
 
@@ -14,7 +15,7 @@ def get_gpu_preset_and_level():
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=TimeoutConfig.GPU_DETECTION_TIMEOUT
         )
         if result.returncode == 0 and result.stdout.strip():
             gpu_name = result.stdout.strip().split('\n')[0]

@@ -9,6 +9,7 @@ from .base import AudioService
 from .exceptions import AudioCleanError
 from .ffmpeg_executor import FFmpegExecutor
 from .file_handler import FileHandler
+from ..config import TimeoutConfig
 
 
 class AudioCleaner(AudioService):
@@ -28,7 +29,7 @@ class AudioCleaner(AudioService):
         ffmpeg_executor: FFmpegExecutor,
         file_handler: FileHandler,
         logger,
-        timeout: int = 60,
+        timeout: int = TimeoutConfig.AUDIO_CLEANING_TIMEOUT,
     ):
         self.ffmpeg_executor = ffmpeg_executor
         self.file_handler = file_handler

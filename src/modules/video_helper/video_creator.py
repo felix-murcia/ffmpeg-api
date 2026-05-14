@@ -4,22 +4,31 @@ Video creator service - creates video from audio and image.
 
 import os
 import uuid
+import subprocess
+import logging
 from typing import Dict
 
 from .file_handler import FileHandler
 from .ffmpeg_executor import FFmpegExecutor
 from .exceptions import VideoCreationError, FileNotFoundError
+from ..config import TimeoutConfig
 
+logger = logging.getLogger("ffmpeg-api")
 
 class VideoCreator:
     """Service for creating video from audio and image."""
 
     def __init__(
-        self, ffmpeg_executor: FFmpegExecutor, file_handler: FileHandler, logger
+        self,
+        ffmpeg_executor: FFmpegExecutor,
+        file_handler: FileHandler,
+        logger,
+        get_gpu_preset_and_level=None,
     ):
         self.ffmpeg_executor = ffmpeg_executor
         self.file_handler = file_handler
         self.logger = logger
+        self.get_gpu_preset_and_level = get_gpu_preset_and_level
 
     def create(self, audio_path: str, image_path: str) -> Dict[str, str]:
         """
@@ -60,10 +69,15 @@ class VideoCreator:
 
         # Execute FFmpeg command
         try:
-            self.ffmpeg_executor.run_ffmpeg(cmd, timeout=300, check=True)
+            self.ffmpeg_executor.run_ffmpeg(cmd, timeout=TimeoutConfig.VIDEO_CREATION_TIMEOUT, check=True)
+        except subprocess.CalledProcessError as e:
+            error_msg = f"FFmpeg command failed with exit code {e.returncode}\nSTDERR:\n{e.stderr}\nSTDOUT:\n{e.stdout}"
+            self.logger.error(error_msg)
+            raise VideoCreationError(error_msg) from e
         except Exception as e:
-            # FFmpegExecutor already logs, but we need to raise domain-specific error
-            raise VideoCreationError(f"Failed to create video: {str(e)}") from e
+            error_msg = f"Unexpected error during video creation: {e}"
+            self.logger.error(error_msg)
+            raise VideoCreationError(error_msg) from e
 
         self.logger.info(f"✅ Video creado exitosamente: {output_path}")
 
@@ -79,7 +93,17 @@ class VideoCreator:
         self, image_path: str, audio_path: str, output_path: str
     ) -> list:
         """Build FFmpeg command for creating video from image and audio."""
-        # Using preset p5 for GTX 960M, tuned for still image
+        # Get GPU configuration
+        if self.get_gpu_preset_and_level:
+            gpu_config = self.get_gpu_preset_and_level()
+        else:
+            gpu_config = {
+                "preset": "p4",
+                "include_level": False,
+                "multipass": "none",
+                "lookahead": "16",
+            }
+
         cmd = [
             "ffmpeg",
             "-y",
@@ -90,35 +114,33 @@ class VideoCreator:
             "-i",
             audio_path,
             "-vf",
-            "scale_cuda=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+            "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2",
             "-c:v",
             "h264_nvenc",
             "-preset",
-            "p5",
+            "p1",
             "-tune",
-            "stillimage",
+            "hq",
             "-rc",
-            "cbr",
+            "vbr",
+            "-cq",
+            "28",
             "-b:v",
-            "5000k",
-            "-minrate",
-            "5000k",
+            "300k",
             "-maxrate",
-            "5000k",
+            "500k",
             "-bufsize",
-            "10000k",
+            "1000k",
             "-g",
             "60",
             "-keyint_min",
             "60",
-            "-sc_threshold",
-            "0",
             "-pix_fmt",
             "yuv420p",
             "-c:a",
             "aac",
             "-b:a",
-            "192k",
+            "96k",
             "-ac",
             "2",
             "-ar",
@@ -126,4 +148,8 @@ class VideoCreator:
             "-shortest",
             output_path,
         ]
+
+        if gpu_config.get("include_level"):
+            cmd.extend(["-level", gpu_config["level"]])
+
         return cmd
