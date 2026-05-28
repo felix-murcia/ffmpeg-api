@@ -4,7 +4,7 @@ services:
   ffmpeg-api:
     build:
       context: .
-      dockerfile: Dockerfile.simple
+      dockerfile: Dockerfile
     container_name: ffmpeg-api-prod
     restart: unless-stopped
     deploy:

@@ -9,6 +9,9 @@ from .audio_converter import AudioConverter
 from .audio_cleaner import AudioCleaner
 from .audio_validator import AudioValidator
 from .audio_stream_detector import AudioStreamDetector
+from .audio_post_processor import AudioPostProcessor, AudioPostProcessingError
+from .audio_tempo_adjuster import AudioTempoAdjuster, AudioTempoError
+from .audio_concatenator import AudioConcatenator, AudioConcatenationError
 from .exceptions import (
     AudioProcessingError,
     AudioValidationError,
@@ -26,10 +29,16 @@ __all__ = [
     "AudioCleaner",
     "AudioValidator",
     "AudioStreamDetector",
+    "AudioPostProcessor",
+    "AudioTempoAdjuster",
+    "AudioConcatenator",
     "AudioProcessingError",
     "AudioValidationError",
     "AudioConversionError",
     "AudioInfoError",
     "AudioCleanError",
+    "AudioPostProcessingError",
+    "AudioTempoError",
+    "AudioConcatenationError",
     "FileNotFoundError",
 ]

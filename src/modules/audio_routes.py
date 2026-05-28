@@ -443,3 +443,172 @@ def register_audio_routes(app):
         except Exception as e:
             logger.error(f"Error inesperado: {e}")
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/audio/post-process", methods=["POST"])
+    def post_process_audio():
+        """
+        Post-process audio to remove TTS artifacts.
+
+        Implements multi-step enhancement:
+        1. Loudness normalization (LUFS-based)
+        2. Breathing artifact removal
+        3. Plosive/spectral artifact stabilization (EQ)
+        4. Dynamic range compression
+
+        Input: {
+            "path": "ruta/al/audio.wav",
+            "normalize": true,
+            "remove_breathing": true,
+            "stabilize_plosives": true,
+            "noise_gate_threshold": -40.0
+        }
+
+        Output: Binary WAV audio data
+        """
+        from .audio_helper import AudioPostProcessor
+
+        data = request.json or {}
+        input_path = data.get("path")
+
+        if not input_path:
+            return jsonify({"error": "Se requiere 'path' en el JSON"}), 400
+
+        if not os.path.exists(input_path):
+            return jsonify({"error": f"Archivo no encontrado: {input_path}"}), 404
+
+        # Extract optional parameters
+        normalize = data.get("normalize", True)
+        remove_breathing = data.get("remove_breathing", True)
+        stabilize_plosives = data.get("stabilize_plosives", True)
+        noise_gate_threshold = float(data.get("noise_gate_threshold", -40.0))
+
+        temp_id = str(uuid.uuid4())
+
+        try:
+            service = AudioPostProcessor(_ffmpeg_executor, _file_handler, logger)
+            audio_data, mime_type, filename = service.post_process(
+                input_path,
+                temp_id,
+                normalize=normalize,
+                remove_breathing=remove_breathing,
+                stabilize_plosives=stabilize_plosives,
+                noise_gate_threshold=noise_gate_threshold,
+            )
+
+            return (
+                audio_data,
+                200,
+                {
+                    "Content-Type": mime_type,
+                    "Content-Disposition": f"attachment; filename={filename}",
+                },
+            )
+        except Exception as e:
+            logger.error(f"[POST-PROCESS] Error: {e}")
+            return jsonify({"error": f"Post-processing failed: {str(e)}"}), 500
+
+    @app.route("/audio/apply-atempo", methods=["POST"])
+    def apply_atempo_filter():
+        """
+        Adjust audio speed (tempo) without changing pitch.
+
+        Uses ffmpeg atempo filter for tempo adjustment.
+
+        Input: {
+            "path": "ruta/al/audio.wav",
+            "tempo_factor": 1.2  # 0.25 to 4.0
+        }
+
+        Output: Binary WAV audio data
+        """
+        from .audio_helper import AudioTempoAdjuster
+
+        data = request.json or {}
+        input_path = data.get("path")
+
+        if not input_path:
+            return jsonify({"error": "Se requiere 'path' en el JSON"}), 400
+
+        if not os.path.exists(input_path):
+            return jsonify({"error": f"Archivo no encontrado: {input_path}"}), 404
+
+        tempo_factor = float(data.get("tempo_factor", 1.0))
+
+        if tempo_factor < 0.25 or tempo_factor > 4.0:
+            return jsonify(
+                {
+                    "error": "Tempo factor must be between 0.25 and 4.0",
+                    "received": tempo_factor,
+                }
+            ), 400
+
+        temp_id = str(uuid.uuid4())
+
+        try:
+            service = AudioTempoAdjuster(_ffmpeg_executor, _file_handler, logger)
+            audio_data, mime_type, filename = service.adjust_tempo(
+                input_path, temp_id, tempo_factor=tempo_factor
+            )
+
+            return (
+                audio_data,
+                200,
+                {
+                    "Content-Type": mime_type,
+                    "Content-Disposition": f"attachment; filename={filename}",
+                },
+            )
+        except Exception as e:
+            logger.error(f"[TEMPO] Error: {e}")
+            return jsonify({"error": f"Tempo adjustment failed: {str(e)}"}), 500
+
+    @app.route("/audio/concatenate", methods=["POST"])
+    def concatenate_audio():
+        """
+        Concatenate multiple audio files into one.
+
+        Uses ffmpeg concat demuxer for lossless concatenation.
+
+        Input: {
+            "paths": ["/tmp/audio1.mp3", "/tmp/audio2.mp3", ...],
+            "output_format": "mp3"  # Optional, default: mp3
+        }
+
+        Output: Binary audio data in requested format
+        """
+        from .audio_helper import AudioConcatenator
+
+        data = request.json or {}
+        audio_paths = data.get("paths", [])
+        output_format = data.get("output_format", "mp3")
+
+        if not audio_paths:
+            return jsonify({"error": "Se requiere 'paths' con lista de archivos"}), 400
+
+        if not isinstance(audio_paths, list):
+            return jsonify({"error": "'paths' debe ser una lista de rutas"}), 400
+
+        # Validate all files exist
+        for path in audio_paths:
+            if not os.path.exists(path):
+                return jsonify({"error": f"Archivo no encontrado: {path}"}), 404
+
+        temp_id = str(uuid.uuid4())
+
+        try:
+            service = AudioConcatenator(_ffmpeg_executor, _file_handler, logger)
+            audio_data, mime_type, filename = service.concatenate(
+                audio_paths, temp_id, output_format=output_format
+            )
+
+            return (
+                audio_data,
+                200,
+                {
+                    "Content-Type": mime_type,
+                    "Content-Disposition": f"attachment; filename={filename}",
+                },
+            )
+        except Exception as e:
+            logger.error(f"[CONCAT] Error: {e}")
+            return jsonify({"error": f"Concatenation failed: {str(e)}"}), 500
