@@ -59,3 +59,8 @@ k3s/cine-secret.yaml
 htmlcov/
 
 .movie_index_cache.json
+
+.mcp.json
+CLAUDE.md
+.claude/
+scripts/
