@@ -336,6 +336,9 @@ Endpoints REST para procesamiento de audio:
 | `/audio/clean` | POST | Limpiar audio (normalizar, convertir) |
 | `/audio/validate` | POST | Validar audio para transcripción |
 | `/audio/validate-by-path` | POST | Validar audio por ruta de archivo |
+| `/audio/post-process` | POST | Post-procesamiento TTS (normalización, breathing removal, plosives) |
+| `/audio/apply-atempo` | POST | Ajuste de velocidad sin cambio de pitch |
+| `/audio/concatenate` | POST | Concatenación lossless de múltiples archivos |
 
 **Endpoints detallados:**
 
@@ -418,6 +421,149 @@ curl -X POST http://localhost:8080/audio/validate \
     "command": "ffmpeg -i input.wav -ac 1 -ar 16000 output.wav"
   }
 }
+```
+
+#### `/audio/post-process`
+Post-procesamiento multi-paso para limpiar artefactos de síntesis TTS. Aplica:
+1. Normalización de volumen (LUFS)
+2. Remoción de artefactos de respiración (high-pass + audio gate)
+3. Estabilización de plosivos y artefactos espectrales (EQ)
+4. Compresión y limitación dinámica
+
+```bash
+curl -X POST http://localhost:8080/audio/post-process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/tmp/tts_output.wav",
+    "normalize": true,
+    "remove_breathing": true,
+    "stabilize_plosives": true,
+    "noise_gate_threshold": -40.0
+  }'
+```
+
+**Parámetros:**
+- `path` (requerido): Ruta absoluta al archivo WAV de entrada
+- `normalize` (opcional, default: true): Aplicar normalización de volumen
+- `remove_breathing` (opcional, default: true): Remover artefactos de respiración
+- `stabilize_plosives` (opcional, default: true): Estabilizar plosivos
+- `noise_gate_threshold` (opcional, default: -40.0): Umbral de gate en dB
+
+**Respuesta:**
+Binary WAV audio data (Content-Type: audio/wav)
+
+**Ejemplo en Python:**
+```python
+import requests
+
+response = requests.post(
+    "http://localhost:8082/audio/post-process",
+    json={
+        "path": "/tmp/audio.wav",
+        "normalize": True,
+        "remove_breathing": True,
+        "stabilize_plosives": True,
+        "noise_gate_threshold": -40.0
+    }
+)
+
+if response.status_code == 200:
+    with open("/tmp/processed.wav", "wb") as f:
+        f.write(response.content)
+    print("✅ Audio post-procesado exitosamente")
+else:
+    print(f"❌ Error: {response.status_code}")
+```
+
+#### `/audio/apply-atempo`
+Ajusta la velocidad del audio sin cambiar el pitch usando el filtro atempo de ffmpeg. Útil para acelerar o desacelerar contenido de TTS.
+
+```bash
+curl -X POST http://localhost:8080/audio/apply-atempo \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/tmp/audio.wav",
+    "tempo_factor": 1.1
+  }'
+```
+
+**Parámetros:**
+- `path` (requerido): Ruta absoluta al archivo WAV de entrada
+- `tempo_factor` (requerido): Factor de velocidad (válido: 0.25-4.0)
+  - 0.5 = mitad de velocidad
+  - 1.0 = velocidad normal
+  - 1.2 = 20% más rápido
+  - 2.0 = doble velocidad
+
+**Respuesta:**
+Binary WAV audio data (Content-Type: audio/wav)
+
+**Ejemplo en Python:**
+```python
+import requests
+
+# Acelerar audio 10%
+response = requests.post(
+    "http://localhost:8082/audio/apply-atempo",
+    json={
+        "path": "/tmp/original.wav",
+        "tempo_factor": 1.1
+    }
+)
+
+if response.status_code == 200:
+    with open("/tmp/accelerated.wav", "wb") as f:
+        f.write(response.content)
+    print("✅ Audio acelerado 10%")
+```
+
+#### `/audio/concatenate`
+Concatenación lossless de múltiples archivos de audio usando el demuxer concat de ffmpeg. Mantiene la máxima calidad sin re-codificar.
+
+```bash
+curl -X POST http://localhost:8080/audio/concatenate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "paths": [
+      "/tmp/segment1.mp3",
+      "/tmp/segment2.mp3",
+      "/tmp/segment3.mp3"
+    ],
+    "output_format": "mp3"
+  }'
+```
+
+**Parámetros:**
+- `paths` (requerido): Lista de rutas absolutas a archivos de audio
+- `output_format` (requerido): Formato de salida (mp3, wav, aac, flac, etc.)
+
+**Respuesta:**
+Binary audio data en el formato solicitado (Content-Type: audio/mpeg, audio/wav, etc.)
+
+**Ejemplo en Python:**
+```python
+import requests
+
+audio_files = [
+    "/tmp/intro.mp3",
+    "/tmp/content.mp3",
+    "/tmp/outro.mp3"
+]
+
+response = requests.post(
+    "http://localhost:8082/audio/concatenate",
+    json={
+        "paths": audio_files,
+        "output_format": "mp3"
+    }
+)
+
+if response.status_code == 200:
+    with open("/tmp/final_podcast.mp3", "wb") as f:
+        f.write(response.content)
+    print("✅ Audio concatenado exitosamente")
+else:
+    print(f"❌ Error: {response.status_code}")
 ```
 
 ## Uso Práctico
@@ -515,6 +661,132 @@ else:
     print(f"❌ Error: {status.get('error', 'Unknown')}")
 ```
 
+### Flujo completo: TTS → Post-procesamiento → Ajuste de velocidad → Concatenación
+
+```python
+import requests
+import os
+
+BASE_URL = "http://localhost:8082"
+
+# Simulación: archivos TTS generados
+tts_segments = [
+    "/tmp/tts_segment1.wav",
+    "/tmp/tts_segment2.wav",
+    "/tmp/tts_segment3.wav"
+]
+
+processed_segments = []
+
+# 1. Post-procesar cada segmento (remover artefactos TTS)
+print("📝 Post-procesando segmentos...")
+for segment in tts_segments:
+    response = requests.post(
+        f"{BASE_URL}/audio/post-process",
+        json={
+            "path": segment,
+            "normalize": True,
+            "remove_breathing": True,
+            "stabilize_plosives": True,
+            "noise_gate_threshold": -40.0
+        }
+    )
+    
+    if response.status_code == 200:
+        output_file = segment.replace(".wav", "_processed.wav")
+        with open(output_file, "wb") as f:
+            f.write(response.content)
+        processed_segments.append(output_file)
+        print(f"  ✅ {os.path.basename(output_file)}")
+    else:
+        print(f"  ❌ Error post-procesando {segment}")
+
+# 2. Ajustar velocidad de cada segmento (acelerar 10%)
+print("\n⚡ Ajustando velocidad...")
+tempo_adjusted = []
+for segment in processed_segments:
+    response = requests.post(
+        f"{BASE_URL}/audio/apply-atempo",
+        json={
+            "path": segment,
+            "tempo_factor": 1.1
+        }
+    )
+    
+    if response.status_code == 200:
+        output_file = segment.replace("_processed", "_tempo")
+        with open(output_file, "wb") as f:
+            f.write(response.content)
+        tempo_adjusted.append(output_file)
+        print(f"  ✅ {os.path.basename(output_file)} (1.1x)")
+    else:
+        print(f"  ❌ Error ajustando tempo en {segment}")
+
+# 3. Concatenar todos los segmentos
+print("\n🔗 Concatenando segmentos...")
+response = requests.post(
+    f"{BASE_URL}/audio/concatenate",
+    json={
+        "paths": tempo_adjusted,
+        "output_format": "mp3"
+    }
+)
+
+if response.status_code == 200:
+    final_output = "/tmp/podcast_final.mp3"
+    with open(final_output, "wb") as f:
+        f.write(response.content)
+    print(f"✅ Podcast final generado: {final_output}")
+    print(f"   Tamaño: {os.path.getsize(final_output) / 1024 / 1024:.1f} MB")
+else:
+    print(f"❌ Error concatenando: {response.status_code}")
+```
+
+### Ejemplo: Generar video desde podcast procesado
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8082"
+
+# 1. Procesar audio del podcast
+print("🎙️ Procesando podcast...")
+response = requests.post(
+    f"{BASE_URL}/audio/post-process",
+    json={
+        "path": "/tmp/podcast_raw.wav",
+        "normalize": True,
+        "remove_breathing": True,
+        "stabilize_plosives": True,
+        "noise_gate_threshold": -35.0
+    }
+)
+
+if response.status_code == 200:
+    with open("/tmp/podcast_processed.wav", "wb") as f:
+        f.write(response.content)
+    print("✅ Podcast procesado")
+    
+    # 2. Crear video con imagen de carátula
+    print("🎬 Generando video...")
+    response = requests.post(
+        "http://localhost:8080/create-from-audio",
+        json={
+            "audio_path": "/tmp/podcast_processed.wav",
+            "image_path": "/tmp/podcast_cover.jpg"
+        }
+    )
+    
+    if response.status_code == 200:
+        result = response.json()
+        print(f"✅ Video generado: {result['output_filename']}")
+        print(f"   Ruta completa: {result['output_path']}")
+    else:
+        print(f"❌ Error generando video: {response.status_code}")
+else:
+    print(f"❌ Error procesando podcast: {response.status_code}")
+```
+
 ## Instalación y Ejecución
 
 ### Requisitos previos
@@ -550,6 +822,69 @@ docker run -p 8080:8080 --gpus all ffmpeg-cuda
 ## Variables de Entorno
 
 No se requieren variables de entorno obligatorias. La aplicación detecta automáticamente la GPU disponible.
+
+## Troubleshooting
+
+### Audio Post-Processing
+
+**Error: "Filter not found"**
+
+Si recibe este error al usar `/audio/post-process`:
+```
+Error reinitializing filters!
+Failed to inject frame into filter network: Filter not found
+```
+
+**Solución:** 
+- El contenedor necesita ser reconstruido con la última versión que incluye el filtro `agate` correcto
+- Ejecutar: `docker-compose build --no-cache && docker-compose up -d`
+- Ver archivo `FFMPEG_FILTER_FIX.md` para detalles técnicos
+
+### Parámetros de Threshold
+
+**Error: Threshold fuera de rango**
+
+El parámetro `noise_gate_threshold` debe estar en dB (ej: -40, -30, -20)
+- Rango recomendado: -50 a -20 dB
+- Default: -40 dB
+- El sistema convierte automáticamente a escala lineal compatible con ffmpeg
+
+### Tempo Factor
+
+**Error: Tempo factor inválido**
+
+El parámetro `tempo_factor` en `/audio/apply-atempo` tiene límites:
+- Mínimo: 0.25 (cuarta parte de velocidad)
+- Máximo: 4.0 (cuatro veces más rápido)
+- Default: 1.0 (velocidad normal)
+
+### Concatenación
+
+**Error: Archivos con formatos incompatibles**
+
+Si los archivos tienen diferentes codecs o muestreos:
+- Primero convertir todos a WAV con el mismo muestreo
+- Luego usar `/audio/concatenate`
+- O procesar con `/audio/clean` antes de concatenar
+
+### Timeouts
+
+Todos los endpoints de audio tienen un timeout de **300 segundos**:
+- Para archivos más largos, aumentar el límite en `config.py`
+- `AUDIO_PROCESSING_TIMEOUT = 300`
+
+## Notas de Integración
+
+Los endpoints de audio (`/audio/*`) están diseñados para ser usados desde [news_bot_hex](../news_bot_hex/) como un servicio HTTP externo.
+
+**URLs de acceso:**
+- Local: `http://localhost:8082`
+- Docker: `http://ffmpeg-api:8080` (desde otras aplicaciones en Docker)
+
+**Integración en news_bot_hex:**
+- `Settings.FFMPEG_API_URL` define la URL base
+- Adapters llaman los endpoints automáticamente (HTTP, no subprocess)
+- Fallos no bloquean el pipeline (graceful degradation)
 
 ## Licencia
 
