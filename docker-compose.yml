@@ -36,7 +36,7 @@ services:
       - /tmp/data:/app/data
       - /tmp/data/cache:/app/data/cache
     networks:
-      - cine-network
+      - ffmpeg-network
     # healthcheck:
     #   test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
     #   interval: 30s
@@ -45,5 +45,5 @@ services:
     #   start_period: 10s
 
 networks:
-  cine-network:
-    external: true
+  ffmpeg-network:
+    driver: bridge
